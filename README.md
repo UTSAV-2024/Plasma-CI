@@ -1,4 +1,4 @@
-# Simulated Jenkins CI/CD Pipeline
+# Simulated Jenkins CI/CD Pipeline as of 28th April 11:30p.m
 
 This project is a custom, simulated Jenkins CI/CD system built from scratch using Node.js. It mimics the core architecture of a real-world CI/CD master by handling webhook events, queuing jobs, scheduling them, and executing them across simulated worker nodes.
 
