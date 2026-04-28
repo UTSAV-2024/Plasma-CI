@@ -16,6 +16,8 @@ module.exports = {
                 // If it succeeds, mark as success
                 db.run(`UPDATE jobs SET status = 'success' WHERE id = ?`, [job.id]);
                 console.log(`🐍 [Worker 1] Finished job #${job.id} -> ✅ SUCCESS`);
+                // Inside your worker's setTimeout after the success update:
+                console.log(`✅ [MASTER LOG] Job #${job.id} for ${job.repo_name} has officially COMPLETED.`);
             } else {
                 // If it fails, check if we can retry
                 if (job.retry_count < MAX_RETRIES) {
