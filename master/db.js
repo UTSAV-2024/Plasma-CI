@@ -12,16 +12,19 @@ const db = new sqlite3.Database(dbPath, (err) => {
         // Create the jobs table if it doesn't exist yet
         // Create the jobs table if it doesn't exist yet
         // Create the jobs table if it doesn't exist yet
+        // Create the jobs table with our NEW columns
         db.run(`CREATE TABLE IF NOT EXISTS jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             repo_name TEXT NOT NULL,
+            branch TEXT DEFAULT 'main',
+            commit_hash TEXT DEFAULT 'manual',
             language TEXT NOT NULL,
             status TEXT DEFAULT 'pending',
-            retry_count INTEGER DEFAULT 0, -- NEW COLUMN
+            retry_count INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`, (err) => {
             if (err) {
-                console.error('❌ Error creating table:', err.message);
+                console.error('❌ Error creating jobs table:', err.message);
             } else {
                 console.log('✅ Jobs table is ready.');
             }
