@@ -1,6 +1,6 @@
 {
   "stages": [
-    { "name": "Check Node Version", "command": "node -v" },
+    { "name": "Check Node Version2", "command": "node -v" },
     { "name": "Install Dependencies", "command": "npm install" },
     { "name": "Run Tests", "command": "npm test" }
 
