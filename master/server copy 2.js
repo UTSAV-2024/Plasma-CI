@@ -184,28 +184,7 @@ app.get('/', (req, res) => {
 </html>
 `);
 });
-// --- NEW CODE: API Endpoint for workers to update a specific stage ---
-app.post('/api/jobs/:id/stage', (req, res) => {
-    const jobId = req.params.id;
-    const { stageName, status } = req.body;
 
-    // 1. Get the current stages array for this job
-    db.get(`SELECT stages FROM jobs WHERE id = ?`, [jobId], (err, row) => {
-        if (err || !row) return res.status(404).json({ error: 'Job not found' });
-
-        let stages = [];
-        try { stages = JSON.parse(row.stages || '[]'); } catch(e) {}
-
-        // 2. Find the matching stage and update its status
-        stages = stages.map(s => s.name === stageName ? { ...s, status } : s);
-
-        // 3. Save the updated JSON array back to the database
-        db.run(`UPDATE jobs SET stages = ? WHERE id = ?`, [JSON.stringify(stages), jobId], function(err) {
-            if (err) return res.status(500).json({ error: 'Database error' });
-            res.json({ message: 'Stage updated successfully' });
-        });
-    });
-});
 
 app.listen(PORT, () => {
     console.log(`🚀 Jenkins Master listening on http://localhost:${PORT}`);

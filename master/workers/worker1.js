@@ -1,57 +1,48 @@
 const db = require('../db');
 
+// --- NEW: Track worker load ---
+let activeJobs = 0;
+const MAX_CAPACITY = 2; // This worker can only handle 2 jobs at a time
+
 module.exports = {
-    // Notice we added 'async' and accepted the new helper functions!
+    // New function for the scheduler to check if worker is full
+    isBusy: () => activeJobs >= MAX_CAPACITY,
+
     execute: async (job, updateStageStatus, sleep) => {
-        console.log(`🐍 [Worker 1 - Python] Starting job #${job.id} for ${job.repo_name} (Attempt ${job.retry_count + 1})`);
+        activeJobs++; // Job started, increase load!
+        console.log(`🐍 [Worker 1] Starting job #${job.id} (Active jobs: ${activeJobs}/${MAX_CAPACITY})`);
         
-        const MAX_RETRIES = 2; // Allow up to 2 retries (3 total attempts)
+        const MAX_RETRIES = 2; 
         
         try {
-            // --- STAGE 1: Fetch Code ---
-            await updateStageStatus(job.id, "Fetch Code", "running");
-            await sleep(1500); // Simulate 1.5 seconds of downloading code
-            await updateStageStatus(job.id, "Fetch Code", "completed");
-
-            // --- STAGE 2: Install Dependencies ---
-            await updateStageStatus(job.id, "Install Dependencies", "running");
-            await sleep(2000); // Simulate 2 seconds of pip install
-            await updateStageStatus(job.id, "Install Dependencies", "completed");
-
-            // --- STAGE 3: Docker Build ---
-            await updateStageStatus(job.id, "Docker Build", "running");
-            await sleep(2500); // Simulate 2.5 seconds of building
+            // ... (Keep all your existing Stage 1, Stage 2, Stage 3 await logic here) ...
             
-            // Simulated 30% chance of failure at the build step!
+            // Just for completeness, here is the end of the logic:
             const isSuccess = Math.random() > 0.30; 
-
             if (isSuccess) {
-                // Success path
                 await updateStageStatus(job.id, "Docker Build", "completed");
                 db.run(`UPDATE jobs SET status = 'success' WHERE id = ?`, [job.id]);
-                console.log(`🐍 [Worker 1] Finished job #${job.id} -> ✅ SUCCESS`);
-                console.log(`✅ [MASTER LOG] Job #${job.id} for ${job.repo_name} has officially COMPLETED.`);
+                console.log(`✅ [Worker 1] SUCCESS job #${job.id}`);
             } else {
-                // Failure path
                 await updateStageStatus(job.id, "Docker Build", "failed");
-                
                 if (job.retry_count < MAX_RETRIES) {
-                    // Reset the JSON stages back to pending so the UI resets!
                     const resetStages = JSON.stringify([
                         { name: "Fetch Code", status: "pending" },
                         { name: "Install Dependencies", status: "pending" },
                         { name: "Docker Build", status: "pending" }
                     ]);
-                    
                     db.run(`UPDATE jobs SET status = 'pending', retry_count = retry_count + 1, stages = ? WHERE id = ?`, [resetStages, job.id]);
-                    console.log(`🐍 [Worker 1] Job #${job.id} failed. 🔄 Returning to queue for retry...`);
+                    console.log(`🔄 [Worker 1] Failed job #${job.id}. Returning to queue...`);
                 } else {
                     db.run(`UPDATE jobs SET status = 'failed' WHERE id = ?`, [job.id]);
-                    console.log(`🐍 [Worker 1] Finished job #${job.id} -> ❌ FAILED (Max retries reached)`);
+                    console.log(`❌ [Worker 1] FAILED job #${job.id}`);
                 }
             }
         } catch (err) {
-            console.error(`🐍 [Worker 1] Execution error:`, err);
+            console.error(`🐍 [Worker 1] Error:`, err);
+        } finally {
+            // --- NEW: Job finished (success or fail), decrease load! ---
+            activeJobs--; 
         }
     }
 };

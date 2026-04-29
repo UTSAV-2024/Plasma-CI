@@ -5,7 +5,6 @@ const dockerWorker = require('./workers/worker3');
 const fallbackWorker = require('./workers/worker4');
 
 const POLL_INTERVAL = 2000; // Check for new jobs every 2 seconds
-
 // Helper to pause execution (simulating work)
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -21,7 +20,6 @@ async function updateStageStatus(jobId, stageName, status) {
         console.error(`Failed to update stage ${stageName}:`, error.message);
     }
 }
-
 function processQueue() {
     // Select the oldest pending job
     const query = `SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`;
@@ -35,35 +33,35 @@ function processQueue() {
         // If no pending jobs are found, just return and wait for the next poll
         if (!job) return; 
 
-        // 1. Figure out which worker we need based on language
-        let targetWorker;
-        const lang = job.language.toLowerCase();
-        
-        if (lang === 'python') targetWorker = pythonWorker;
-        else if (lang === 'nodejs') targetWorker = nodeWorker;
-        else if (lang === 'docker') targetWorker = dockerWorker;
-        else targetWorker = fallbackWorker;
-
-        // 2. CHECK LOAD: Is the worker too busy? (Instruction 7)
-        if (targetWorker.isBusy && targetWorker.isBusy()) {
-            console.log(`⏳ [Scheduler] Worker for '${lang}' is at MAX CAPACITY. Leaving Job #${job.id} in queue...`);
-            return; // Exit and leave the job as 'pending' in the database!
-        }
-
-        // 3. Worker is free! Mark as running so it isn't picked up twice
+        // Mark the job as 'running' so it isn't picked up twice
         db.run(`UPDATE jobs SET status = 'running' WHERE id = ?`, [job.id], (updateErr) => {
             if (updateErr) {
                 console.error('❌ Error updating job status:', updateErr.message);
                 return;
             }
 
-            console.log(`\n📋 [Scheduler] Picked up job #${job.id} (${lang}). Routing to worker...`);
-            
-            // Pass the helpers down to the worker!
-            targetWorker.execute(job, updateStageStatus, sleep);
+            console.log(`\n📋 [Scheduler] Picked up job #${job.id} (${job.language}). Routing to worker...`);
+
+            // Route to the appropriate worker based on the language
+            // Route to the appropriate worker based on the language
+            switch (job.language.toLowerCase()) {
+                case 'python':
+                    pythonWorker.execute(job, updateStageStatus, sleep);
+                    break;
+                case 'nodejs':
+                    nodeWorker.execute(job, updateStageStatus, sleep);
+                    break;
+                case 'docker':
+                    dockerWorker.execute(job, updateStageStatus, sleep);
+                    break;
+                default:
+                    fallbackWorker.execute(job, updateStageStatus, sleep);
+                    break;
+            }
         });
     });
 }
 
 console.log('⏱️ Pipeline Manager/Scheduler started. Polling queue...');
+// Run the processQueue function repeatedly
 setInterval(processQueue, POLL_INTERVAL);
