@@ -24,7 +24,7 @@ async function updateStageStatus(jobId, stageName, status) {
 
 function processQueue() {
     // Select the oldest pending job
-    const query = `SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`;
+    const query = `SELECT * FROM jobs WHERE status = 'pending' ORDER BY priority DESC, id ASC LIMIT 1;`;
 
     db.get(query, (err, job) => {
         if (err) {
