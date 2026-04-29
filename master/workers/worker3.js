@@ -1,61 +1,98 @@
 const db = require('../db');
+const { exec } = require('child_process');
+const fs = require('fs/promises');
+const path = require('path');
+const util = require('util');
 
-// --- Track worker load ---
+// Promisify 'exec' so we can use await with terminal commands
+const execPromise = util.promisify(exec);
+
 let activeJobs = 0;
-const MAX_CAPACITY = 2; // This worker can only handle 2 jobs at a time
+const MAX_CAPACITY = 2; 
 
 module.exports = {
-    // New function for the scheduler to check if worker is full
     isBusy: () => activeJobs >= MAX_CAPACITY,
 
     execute: async (job, updateStageStatus, sleep) => {
-        activeJobs++; // Job started, increase load!
-        console.log(`🐳 [Worker 3 - Docker] Starting job #${job.id} for ${job.repo_name} (Active jobs: ${activeJobs}/${MAX_CAPACITY})`);
+        activeJobs++; 
+        console.log(`🚀 [Dynamic Worker] Starting job #${job.id} for ${job.repo_name}`);
+
+        // Define a temporary workspace folder for this specific job
+        const workspace = path.join(__dirname, '..', 'workspaces', `job-${job.id}`);
         
-        const MAX_RETRIES = 2; 
-        
+        // Construct the GitHub URL (Update 'UTSAV-2024' if your username is different)
+        const repoUrl = `https://github.com/UTSAV-2024/${job.repo_name}.git`; 
+
         try {
-            // --- STAGE 1: Fetch Code ---
-            await updateStageStatus(job.id, "Fetch Code", "running");
-            await sleep(1500); // Simulate downloading code
-            await updateStageStatus(job.id, "Fetch Code", "completed");
+            // --- 1. Prepare Workspace ---
+            await fs.mkdir(workspace, { recursive: true });
 
-            // --- STAGE 2: Install Dependencies ---
-            await updateStageStatus(job.id, "Install Dependencies", "running");
-            await sleep(2000); // Simulate installing dependencies
-            await updateStageStatus(job.id, "Install Dependencies", "completed");
+            // --- 2. Clone Repository ---
+            console.log(`[Job ${job.id}] 📥 Cloning repository...`);
+            await execPromise(`git clone -b ${job.branch} ${repoUrl} .`, { cwd: workspace });
 
-            // --- STAGE 3: Docker Build ---
-            await updateStageStatus(job.id, "Docker Build", "running");
-            await sleep(2500); // Simulate docker build
+            // --- 3. Read the Pipeline Config ---
+            console.log(`[Job ${job.id}] 📄 Reading forge-pipeline.json...`);
+            const configPath = path.join(workspace, 'forge-pipeline.json');
+            const configData = await fs.readFile(configPath, 'utf-8');
+            const pipelineConfig = JSON.parse(configData);
+
+            // --- 4. Overwrite Database Stages dynamically ---
+            // This takes whatever stages you wrote in your JSON and pushes them to the UI!
+            const dynamicStages = pipelineConfig.stages.map(s => ({ name: s.name, status: "pending" }));
+            await new Promise((resolve, reject) => {
+                db.run(`UPDATE jobs SET stages = ? WHERE id = ?`, [JSON.stringify(dynamicStages), job.id], (err) => {
+                    if (err) reject(err); else resolve();
+                });
+            });
+
+            // Give the UI a half-second to render the new stages before we start running them
+            await sleep(500); 
+
+            // --- 5. Execute Stages Dynamically! ---
+            let pipelineFailed = false;
             
-            // Simulated 30% chance of failure at the build step!
-            const isSuccess = Math.random() > 0.30; 
-            
-            if (isSuccess) {
-                await updateStageStatus(job.id, "Docker Build", "completed");
-                db.run(`UPDATE jobs SET status = 'success' WHERE id = ?`, [job.id]);
-                console.log(`✅ [Worker 3] SUCCESS job #${job.id}`);
-            } else {
-                await updateStageStatus(job.id, "Docker Build", "failed");
-                if (job.retry_count < MAX_RETRIES) {
-                    const resetStages = JSON.stringify([
-                        { name: "Fetch Code", status: "pending" },
-                        { name: "Install Dependencies", status: "pending" },
-                        { name: "Docker Build", status: "pending" }
-                    ]);
-                    db.run(`UPDATE jobs SET status = 'pending', retry_count = retry_count + 1, stages = ? WHERE id = ?`, [resetStages, job.id]);
-                    console.log(`🔄 [Worker 3] Failed job #${job.id}. Returning to queue...`);
-                } else {
-                    db.run(`UPDATE jobs SET status = 'failed' WHERE id = ?`, [job.id]);
-                    console.log(`❌ [Worker 3] FAILED job #${job.id}`);
+            for (const stage of pipelineConfig.stages) {
+                console.log(`[Job ${job.id}] ▶️ Running: ${stage.name} (${stage.command})`);
+                await updateStageStatus(job.id, stage.name, "running");
+
+                try {
+                    // This runs the actual command in the terminal inside the workspace folder!
+                    const { stdout, stderr } = await execPromise(stage.command, { cwd: workspace });
+                    console.log(`[Job ${job.id}] 💬 Output:\n${stdout}`);
+                    
+                    await updateStageStatus(job.id, stage.name, "completed");
+                } catch (cmdErr) {
+                    console.error(`[Job ${job.id}] ❌ FAILED at ${stage.name}:\n${cmdErr.message}`);
+                    await updateStageStatus(job.id, stage.name, "failed");
+                    pipelineFailed = true;
+                    break; // Stop running further stages if one fails!
                 }
             }
+
+            // --- 6. Finalize Job Status ---
+            if (pipelineFailed) {
+                db.run(`UPDATE jobs SET status = 'failed' WHERE id = ?`, [job.id]);
+                console.log(`❌ [Job ${job.id}] Pipeline FAILED`);
+            } else {
+                db.run(`UPDATE jobs SET status = 'success' WHERE id = ?`, [job.id]);
+                console.log(`✅ [Job ${job.id}] Pipeline SUCCESS`);
+            }
+
         } catch (err) {
-            console.error(`🐳 [Worker 3] Error:`, err);
+            console.error(`❌ [Job ${job.id}] Critical Execution Error:`, err.message);
+            db.run(`UPDATE jobs SET status = 'failed' WHERE id = ?`, [job.id]);
         } finally {
-            // --- Job finished (success or fail), decrease load! ---
-            activeJobs--; 
+            // --- 7. Cleanup ---
+            // Always delete the downloaded code when finished to save disk space
+            try {
+                await fs.rm(workspace, { recursive: true, force: true });
+                console.log(`🧹 [Job ${job.id}] Cleaned up workspace.`);
+            } catch (e) { 
+                console.error(`[Job ${job.id}] Cleanup error:`, e.message); 
+            }
+            
+            activeJobs--;
         }
     }
 };
