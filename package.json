@@ -1,0 +1,17 @@
+{
+  "name": "plasma-ci",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "express": "^5.2.1",
+    "ngrok": "^5.0.0-beta.2",
+    "sqlite3": "^6.0.1"
+  }
+}
