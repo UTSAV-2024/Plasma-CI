@@ -12,16 +12,16 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Helper to tell the Master server to update a stage's visual status
 async function updateStageStatus(jobId, stageName, status) {
     try {
-        await fetch(`http://localhost:3000/api/jobs/${jobId}/stage`, {
+        const response = await fetch(`http://localhost:3000/api/jobs/${jobId}/stage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ stageName, status })
         });
+        if (!response.ok) console.error(`Server rejected status update: ${response.status}`);
     } catch (error) {
-        console.error(`Failed to update stage ${stageName}:`, error.message);
+        console.error(`Failed to reach Master Server:`, error.message);
     }
 }
-
 function processQueue() {
     // Select the oldest pending job
     const query = `SELECT * FROM jobs WHERE status = 'pending' ORDER BY priority DESC, id ASC LIMIT 1;`;
